@@ -1,0 +1,55 @@
+name: Deploy AWS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    if: ${{ vars.S3_BUCKET != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: client/my-app/package-lock.json
+      - name: Build frontend
+        working-directory: client/my-app
+        env:
+          REACT_APP_API_URL: ${{ vars.API_URL }}
+          REACT_APP_SOCKET_URL: ${{ vars.SOCKET_URL }}
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy to S3
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - run: aws s3 sync client/my-app/build s3://${{ vars.S3_BUCKET }} --delete
+      - name: Invalidate CloudFront
+        if: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"
+
+  deploy-backend-ecr:
+    runs-on: ubuntu-latest
+    if: ${{ vars.ECR_REPOSITORY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:latest

@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+coverage
+.env
+.env.test
+__tests__
+jest.config.js
+jest.setup.js
+.git
+*.md
